@@ -1,0 +1,10 @@
+node_modules/
+dist/
+output/
+.playwright-cli/
+.playwright/
+*.log
+.env
+.env.*
+!.env.example
+.terminal-process.json
