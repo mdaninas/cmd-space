@@ -733,7 +733,14 @@ export default function App() {
       >
         <div className="sidebar-brand-row">
           <div className="brand">
-            <TerminalIcon size={20} strokeWidth={1.8} />
+            <img
+              className="brand-icon"
+              src="/cmd-space-icon.png"
+              width={28}
+              height={28}
+              alt=""
+              draggable={false}
+            />
             <span>cmd space</span>
           </div>
           <button
@@ -1172,7 +1179,14 @@ export default function App() {
                     {loading ? (
                       <LoaderCircle className="spin" size={27} />
                     ) : (
-                      <TerminalIcon size={30} />
+                      <img
+                        className="empty-app-icon"
+                        src="/cmd-space-icon.png"
+                        width={48}
+                        height={48}
+                        alt=""
+                        draggable={false}
+                      />
                     )}
                   </span>
                   <h2>
