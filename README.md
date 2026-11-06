@@ -88,6 +88,24 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\terminal-control.ps1 -
 - Live previews of appearance settings, saved sidebar preferences, and a visible session limit before creating a terminal.
 - Responsive layouts, touch controls for Esc, Tab, Ctrl+C, and arrow keys, keyboard navigation, accessible labels, and terminal screen-reader mode.
 
+## Connect multiple VMs with one click
+
+Open **Daftar SSH** in the sidebar (or the server icon in the header). Paste one destination per line, for example:
+
+```text
+ssh student@10.10.10.226, ceph-01
+ssh student@10.10.10.243, ceph-02
+ssh student@10.10.10.65, ceph-03
+```
+
+Click **Connect** to save the list and open an independent SSH terminal for every line. The optional second column after the comma supplies the terminal name, such as `ceph-01`. Without that column, new entries use `user@host` as their names. Names stay in the saved list; changing a name and connecting again updates the existing terminal without opening a duplicate. **Simpan daftar** saves without connecting; the sidebar's **Connect semua** opens the saved list later. After restarting the application, the saved list is ready to connect again. Existing active terminals are reused, and ended SSH terminals are replaced when connecting again.
+
+Bare `user@host`, IP addresses, and aliases from your OpenSSH config are also accepted. Optional `-p port`, `-l username`, and `-i "C:\path with spaces\key"` arguments go before the destination. Empty username/port/key settings follow your normal OpenSSH defaults and config. Each line must contain one SSH destination; remote commands and shell scripts are not supported.
+
+The list supports up to 12 VMs, with a shared limit of 12 active terminal sessions including CMD. If some terminals cannot be opened, the successful ones stay open and the application reports which destinations could not be opened. Opening a terminal starts SSH; authentication and remote reachability still depend on the VM. Enter passwords, key passphrases, and new-host confirmations in each terminal as prompted. SSH keys/agents can avoid repeated password entry.
+
+The Windows **OpenSSH Client** (`ssh.exe`) must be available on PATH. The app launches it directly with separate arguments. Only destination settings are stored in `.cmd-space/ssh-profiles.json` in this project; passwords and private key contents are not stored there. This directory is ignored by Git. Stopping the server still ends running SSH sessions; the saved list survives.
+
 ## AI agent automation through Chrome
 
 CMD Space can serve as a browser-accessible terminal for AI agents. With a compatible Chrome extension, browser-control plugin, or computer-use tool, an agent can interact with the terminal page: focus a session, type commands, press Enter, inspect visible output, and continue based on the result. The commands execute in a real local CMD session, giving the agent a workflow similar to operating a terminal directly.

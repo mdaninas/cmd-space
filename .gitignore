@@ -8,3 +8,4 @@ output/
 .env.*
 !.env.example
 .terminal-process.json
+.cmd-space/

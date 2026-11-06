@@ -10,6 +10,8 @@ export interface Session {
   createdAt: number;
   exited: boolean;
   exitCode: number | null;
+  sshProfileId?: string;
+  sshTarget?: string;
 }
 export type Connection =
   "connecting" | "connected" | "disconnected" | "exited" | "elsewhere";

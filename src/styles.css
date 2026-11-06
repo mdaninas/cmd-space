@@ -205,6 +205,19 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-he
 .toast button { display: grid; place-items: center; padding: 5px; margin-left: 4px; border-radius: 4px; background: transparent; color: var(--muted); }
 .toast button:hover { background: var(--hover); color: #e5e9ec; }
 
+/* Saved SSH connections */
+.ssh-count { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.ssh-connect-button { width: 100%; margin-top: 6px; flex-shrink: 0; }
+.ssh-modal { width: min(650px, calc(100vw - 32px)); }
+.ssh-lines { display: block; width: 100%; min-height: 180px; max-height: 50dvh; resize: vertical; padding: 14px; border: 1px solid #454c54; border-radius: 5px; background: var(--app); color: #e1e5e8; font-family: var(--mono); font-size: 13px; line-height: 1.8; white-space: pre; overflow: auto; }
+.ssh-lines:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.ssh-lines::placeholder { color: #737e88; }
+.ssh-list-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 9px 0 14px; color: var(--muted); font-size: 12px; }
+.ssh-saved { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); }
+.ssh-profiles .form-error > div + div { margin-top: 6px; }
+.ssh-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-size: 12px; }
+.terminal-location:has(.ssh-target) .path-button { display: none; }
+
 /* Command search */
 .palette-dialog { position: fixed; top: 14dvh; width: min(590px, calc(100vw - 32px)); max-height: calc(86dvh - 24px); margin: 0 auto; padding: 0; border: 1px solid #424a52; border-radius: 8px; background: var(--sidebar); color: #e1e5e8; box-shadow: 0 16px 60px #0008; overflow: hidden; }
 .palette-search-row { display: flex; align-items: center; gap: 11px; min-height: 57px; padding: 10px 12px 10px 15px; border-bottom: 1px solid var(--line); }

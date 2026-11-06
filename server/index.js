@@ -9,6 +9,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import headless from "@xterm/headless";
 import serialize from "@xterm/addon-serialize";
 import { releaseConptyResources } from "./conpty-cleanup.js";
+import { openProfileStore, sshArguments } from "./ssh-profiles.js";
 
 const { Terminal } = headless;
 const { SerializeAddon } = serialize;
@@ -28,10 +29,13 @@ export async function createTerminalServer({
   port = 3000,
   dev = false,
   cwd = root,
+  dataDirectory = path.join(root, ".cmd-space"),
 } = {}) {
   if (process.platform !== "win32")
     throw new Error("CMD Space membutuhkan Windows 10/11 dengan ConPTY.");
   const sessions = new Map();
+  const profiles = await openProfileStore(dataDirectory);
+  let connectingProfiles = Promise.resolve();
   let sequence = 0;
   let stopping = false;
   let vite;
@@ -49,6 +53,10 @@ export async function createTerminalServer({
     createdAt: session.createdAt,
     exited: session.exited,
     exitCode: session.exitCode,
+    sshProfileId: session.sshProfile?.id,
+    sshTarget: session.sshProfile
+      ? `${session.sshProfile.username ? session.sshProfile.username + "@" : ""}${session.sshProfile.host}`
+      : undefined,
   });
   const send = (socket, message) => {
     if (socket.readyState === WebSocket.OPEN)
@@ -84,7 +92,7 @@ export async function createTerminalServer({
     session.onExit.dispose();
     session.screen.dispose();
   }
-  async function createSession(options) {
+  async function createSession(options, sshProfile) {
     if (sessions.size >= MAX_SESSIONS)
       throw Object.assign(
         new Error("Maksimal 12 sesi. Tutup salah satu sesi terlebih dahulu."),
@@ -105,6 +113,10 @@ export async function createTerminalServer({
         { status: 400 },
       );
     }
+    if (stopping)
+      throw Object.assign(new Error("Server sedang dihentikan."), {
+        status: 503,
+      });
     // Recheck after the asynchronous directory lookup to enforce the limit under concurrent requests.
     if (sessions.size >= MAX_SESSIONS)
       throw Object.assign(new Error("Maksimal 12 sesi."), { status: 409 });
@@ -121,8 +133,10 @@ export async function createTerminalServer({
     let processPty;
     try {
       processPty = pty.spawn(
-        process.env.COMSPEC || "C:\\Windows\\System32\\cmd.exe",
-        [],
+        sshProfile
+          ? "ssh.exe"
+          : process.env.COMSPEC || "C:\\Windows\\System32\\cmd.exe",
+        sshProfile ? sshArguments(sshProfile) : [],
         {
           name: "xterm-256color",
           cols: 100,
@@ -143,7 +157,10 @@ export async function createTerminalServer({
     }
     const session = {
       id: randomUUID(),
-      name: `Command Prompt ${String(++sequence).padStart(2, "0")}`,
+      name:
+        sshProfile?.name ||
+        `Command Prompt ${String(++sequence).padStart(2, "0")}`,
+      sshProfile,
       cwd: directory,
       pty: processPty,
       screen,
@@ -183,6 +200,75 @@ export async function createTerminalServer({
     });
     sessions.set(session.id, session);
     return session;
+  }
+  function connectProfiles(ids) {
+    const selected = profiles.list();
+    if (
+      ids !== undefined &&
+      (!Array.isArray(ids) ||
+        !ids.length ||
+        ids.some(
+          (id) =>
+            typeof id !== "string" ||
+            !selected.some((profile) => profile.id === id),
+        ))
+    )
+      throw Object.assign(new Error("Pilih profil SSH yang tersimpan."), {
+        status: 400,
+      });
+    const requested =
+      ids === undefined
+        ? selected
+        : selected.filter((profile) => ids.includes(profile.id));
+    // Serialize launches across browser tabs so repeated clicks cannot create duplicate sessions.
+    const operation = connectingProfiles.then(async () => {
+      const results = [];
+      for (const profile of requested) {
+        try {
+          const previous = [...sessions.values()].find(
+            (session) =>
+              session.sshProfile?.id === profile.id && !session.exited,
+          );
+          if (previous) {
+            previous.name = profile.name;
+            previous.sshProfile = {
+              ...previous.sshProfile,
+              name: profile.name,
+            };
+            results.push({
+              profileId: profile.id,
+              name: profile.name,
+              sessionId: previous.id,
+              reused: true,
+            });
+            continue;
+          }
+          for (const session of [...sessions.values()])
+            if (session.sshProfile?.id === profile.id && session.exited)
+              destroy(session);
+          const session = await createSession({}, profile);
+          results.push({
+            profileId: profile.id,
+            name: profile.name,
+            sessionId: session.id,
+            reused: false,
+          });
+        } catch (error) {
+          if (!error.status)
+            console.error(`SSH ${profile.name}: ${error.message}`);
+          results.push({
+            profileId: profile.id,
+            name: profile.name,
+            error: error.status
+              ? error.message
+              : "Tidak dapat membuka SSH. Pastikan OpenSSH Client (ssh.exe) tersedia.",
+          });
+        }
+      }
+      return { results, sessions: [...sessions.values()].map(metadata) };
+    });
+    connectingProfiles = operation.catch(() => {});
+    return operation;
   }
   async function body(req) {
     let value = "";
@@ -242,6 +328,19 @@ export async function createTerminalServer({
         }
         if (url.pathname === "/api/sessions" && req.method === "GET")
           return json(res, 200, [...sessions.values()].map(metadata));
+        if (url.pathname === "/api/ssh-profiles" && req.method === "GET")
+          return json(res, 200, profiles.list());
+        if (url.pathname === "/api/ssh-profiles" && req.method === "PUT")
+          return json(
+            res,
+            200,
+            await profiles.save((await body(req)).profiles),
+          );
+        if (
+          url.pathname === "/api/ssh-profiles/connect" &&
+          req.method === "POST"
+        )
+          return json(res, 200, await connectProfiles((await body(req)).ids));
         if (url.pathname === "/api/sessions" && req.method === "POST")
           return json(res, 201, metadata(await createSession(await body(req))));
         const match = url.pathname.match(/^\/api\/sessions\/([a-f0-9-]+)$/);

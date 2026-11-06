@@ -27,6 +27,7 @@ import {
   Plus,
   RotateCw,
   Search,
+  Server,
   Settings2,
   Terminal as TerminalIcon,
   Trash2,
@@ -35,6 +36,7 @@ import {
 import { TerminalSession, type Session, type Preferences } from "./terminal";
 import CommandPalette from "./CommandPalette";
 import { sessionLabel } from "./session-label";
+import SshProfiles, { type SshProfile } from "./SshProfiles";
 
 interface Config {
   cwd: string;
@@ -45,7 +47,17 @@ interface Config {
   shell: string;
   maxSessions: number;
 }
-type Modal = "new" | "settings" | "help" | "close" | "rename" | null;
+type Modal = "new" | "settings" | "help" | "close" | "rename" | "ssh" | null;
+interface SshConnectResult {
+  sessions: Session[];
+  results: {
+    profileId: string;
+    name: string;
+    sessionId?: string;
+    reused?: boolean;
+    error?: string;
+  }[];
+}
 const defaults: Preferences = {
   fontSize: 14,
   cursorBlink: true,
@@ -126,6 +138,8 @@ function IconButton({
 export default function App() {
   const [config, setConfig] = useState<Config>();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sshProfiles, setSshProfiles] = useState<SshProfile[]>([]);
+  const [sshErrors, setSshErrors] = useState<string[]>([]);
   const [activeId, setActiveId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -168,6 +182,7 @@ export default function App() {
     undefined,
   );
   const preferencesRef = useRef(preferences);
+  const sshOperation = useRef(false);
   const changed = useCallback(() => redraw((value) => value + 1), []);
   const notify = useCallback((message: string) => {
     clearTimeout(toastTimer.current);
@@ -188,15 +203,18 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const [details, existing] = await Promise.all([
+      const [details, existing, profiles] = await Promise.all([
         api<Config>("/config"),
         api<Session[]>("/sessions"),
+        api<SshProfile[]>("/ssh-profiles"),
       ]);
       setConfig(details);
       setDirectory(details.cwd);
-      const list = existing.length
-        ? existing
-        : [await api<Session>("/sessions", "POST", {})];
+      setSshProfiles(profiles);
+      const list =
+        existing.length || profiles.length
+          ? existing
+          : [await api<Session>("/sessions", "POST", {})];
       setSessions(list);
       let previous = "";
       try {
@@ -205,7 +223,9 @@ export default function App() {
         /* Storage may be disabled. */
       }
       setActiveId(
-        list.some((session) => session.id === previous) ? previous : list[0].id,
+        list.some((session) => session.id === previous)
+          ? previous
+          : list[0]?.id || "",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Server tidak tersedia.");
@@ -276,7 +296,9 @@ export default function App() {
       setFormError("");
       dialog.current?.showModal();
       requestAnimationFrame(() => {
-        const field = dialog.current?.querySelector<HTMLInputElement>("input");
+        const field = dialog.current?.querySelector<
+          HTMLInputElement | HTMLTextAreaElement
+        >("input, textarea");
         field?.focus();
         if (modal === "rename") field?.select();
       });
@@ -429,6 +451,72 @@ export default function App() {
     sessionLimitReached,
   ]);
 
+  async function saveSshProfiles(profiles: SshProfile[]) {
+    if (sshOperation.current) return;
+    sshOperation.current = true;
+    setBusy(true);
+    try {
+      const saved = await api<SshProfile[]>("/ssh-profiles", "PUT", {
+        profiles,
+      });
+      setSshProfiles(saved);
+      setSshErrors([]);
+      notify("Profil SSH disimpan.");
+    } finally {
+      sshOperation.current = false;
+      setBusy(false);
+    }
+  }
+  async function connectSshProfiles(ids?: string[]) {
+    if (busy || sshOperation.current) return;
+    sshOperation.current = true;
+    setBusy(true);
+    setSshErrors([]);
+    try {
+      const result = await api<SshConnectResult>(
+        "/ssh-profiles/connect",
+        "POST",
+        ids ? { ids } : {},
+      );
+      for (const session of result.sessions) {
+        const instance = instances.current.get(session.id);
+        if (instance) {
+          instance.session = session;
+          instance.terminal.textarea?.setAttribute(
+            "aria-label",
+            `Input terminal ${session.name}`,
+          );
+        }
+      }
+      setSessions(result.sessions);
+      setSessionFilter("");
+      const first = result.results.find((item) => item.sessionId);
+      if (first?.sessionId) {
+        setActiveId(first.sessionId);
+        setSidebar(false);
+      }
+      const failures = result.results
+        .filter((item) => item.error)
+        .map((item) => `${item.name}: ${item.error}`);
+      setSshErrors(failures);
+      if (failures.length) setModal("ssh");
+      else {
+        setModal(null);
+        const opened = result.results.filter((item) => !item.reused).length;
+        notify(
+          opened
+            ? `${opened} terminal SSH dibuka. Selesaikan login di terminal jika diminta.`
+            : "Terminal SSH yang masih aktif dipakai kembali.",
+        );
+      }
+    } catch (err) {
+      setSshErrors([(err as Error).message]);
+      setModal("ssh");
+    } finally {
+      sshOperation.current = false;
+      setBusy(false);
+    }
+  }
   async function createSession() {
     if (busy) return;
     if (!canCreate) {
@@ -629,6 +717,28 @@ export default function App() {
         >
           <Plus size={17} /> Terminal baru
         </button>
+        <button
+          className="nav-item"
+          onClick={() => setModal("ssh")}
+          disabled={!config || busy}
+        >
+          <Server size={17} /> <span>Daftar SSH</span>
+          <span className="ssh-count">{sshProfiles.length}</span>
+        </button>
+        {sshProfiles.length > 0 && (
+          <button
+            className="ssh-connect-button secondary-button"
+            disabled={!config || busy}
+            onClick={() => void connectSshProfiles()}
+          >
+            {busy ? (
+              <LoaderCircle size={15} className="spin" />
+            ) : (
+              <Server size={15} />
+            )}{" "}
+            Connect semua
+          </button>
+        )}
         <div className="side-heading session-heading">Sesi</div>
         {(sessions.length > 5 || sessionFilter) && (
           <div className="session-filter">
@@ -731,6 +841,15 @@ export default function App() {
             <h1>Terminal</h1>
           </div>
           <div className="topbar-right">
+            <button
+              className="icon-button"
+              aria-label="Daftar SSH"
+              title="Daftar SSH"
+              disabled={!config || busy}
+              onClick={() => setModal("ssh")}
+            >
+              <Server size={17} />
+            </button>
             <button
               className="header-new-session"
               onClick={openNew}
@@ -854,6 +973,14 @@ export default function App() {
                   </span>
                   <Copy size={13} className="path-copy-icon" />
                 </button>
+                {activeSession?.sshTarget && (
+                  <span
+                    className="ssh-target"
+                    title={`SSH ${activeSession.sshTarget}`}
+                  >
+                    SSH · {activeSession.sshTarget}
+                  </span>
+                )}
               </div>
               <div className="terminal-actions">
                 <IconButton
@@ -1002,16 +1129,41 @@ export default function App() {
                       ? "Menghubungkan…"
                       : error
                         ? "Server belum terhubung"
-                        : "Belum ada terminal"}
+                        : sshProfiles.length
+                          ? "Daftar SSH siap"
+                          : "Belum ada terminal"}
                   </h2>
                   {error && <p>{error}</p>}
+                  {!loading && !error && sshProfiles.length > 0 && (
+                    <p>
+                      {sshProfiles.length} VM tersimpan. Buka semuanya dengan
+                      satu klik.
+                    </p>
+                  )}
                   {!loading && (
                     <button
                       className="primary-button"
-                      onClick={error ? () => void initialize() : openNew}
+                      disabled={busy}
+                      onClick={
+                        error
+                          ? () => void initialize()
+                          : sshProfiles.length
+                            ? () => void connectSshProfiles()
+                            : openNew
+                      }
                     >
-                      {error ? <RotateCw size={16} /> : <Plus size={16} />}
-                      {error ? "Coba lagi" : "Buka terminal"}
+                      {error ? (
+                        <RotateCw size={16} />
+                      ) : sshProfiles.length ? (
+                        <Server size={16} />
+                      ) : (
+                        <Plus size={16} />
+                      )}
+                      {error
+                        ? "Coba lagi"
+                        : sshProfiles.length
+                          ? `Connect (${sshProfiles.length})`
+                          : "Buka terminal"}
                     </button>
                   )}
                 </div>
@@ -1081,7 +1233,7 @@ export default function App() {
       </main>
 
       <dialog
-        className="modal"
+        className={`modal ${modal === "ssh" ? "ssh-modal" : ""}`}
         ref={dialog}
         onCancel={(event) => {
           event.preventDefault();
@@ -1097,13 +1249,15 @@ export default function App() {
             <h2 id="modal-title">
               {modal === "new"
                 ? "Terminal baru"
-                : modal === "settings"
-                  ? "Pengaturan"
-                  : modal === "help"
-                    ? "Pintasan"
-                    : modal === "rename"
-                      ? "Ganti nama"
-                      : "Tutup terminal?"}
+                : modal === "ssh"
+                  ? "Daftar SSH"
+                  : modal === "settings"
+                    ? "Pengaturan"
+                    : modal === "help"
+                      ? "Pintasan"
+                      : modal === "rename"
+                        ? "Ganti nama"
+                        : "Tutup terminal?"}
             </h2>
             <IconButton
               title="Tutup dialog"
@@ -1113,6 +1267,19 @@ export default function App() {
               <X size={19} />
             </IconButton>
           </div>
+          {modal === "ssh" && (
+            <SshProfiles
+              profiles={sshProfiles}
+              sessions={sessions.map(
+                (session) =>
+                  instances.current.get(session.id)?.session || session,
+              )}
+              busy={busy}
+              errors={sshErrors}
+              onSave={saveSshProfiles}
+              onConnect={connectSshProfiles}
+            />
+          )}
           {modal === "new" && (
             <form
               onSubmit={(event) => {
@@ -1409,6 +1576,21 @@ export default function App() {
         activeId={activeId}
         onSelectSession={select}
         actions={[
+          {
+            id: "ssh-profiles",
+            label: "Edit daftar SSH",
+            icon: <Server size={18} />,
+            onSelect: () => setModal("ssh"),
+            disabled: !config || busy,
+          },
+          {
+            id: "ssh-connect-all",
+            label: "Hubungkan semua VM",
+            description: `${sshProfiles.length} profil SSH tersimpan`,
+            icon: <Server size={18} />,
+            onSelect: () => void connectSshProfiles(),
+            disabled: !config || busy || !sshProfiles.length,
+          },
           {
             id: "new",
             label: "Terminal baru",
