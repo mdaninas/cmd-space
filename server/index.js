@@ -328,6 +328,16 @@ export async function createTerminalServer({
         }
         if (url.pathname === "/api/sessions" && req.method === "GET")
           return json(res, 200, [...sessions.values()].map(metadata));
+        if (url.pathname === "/api/sessions" && req.method === "DELETE") {
+          // Close after any batch already in progress, before later batch launches.
+          const closing = connectingProfiles.then(() => {
+            const current = [...sessions.values()];
+            for (const session of current) destroy(session);
+            return { closed: current.length };
+          });
+          connectingProfiles = closing.catch(() => {});
+          return json(res, 200, await closing);
+        }
         if (url.pathname === "/api/ssh-profiles" && req.method === "GET")
           return json(res, 200, profiles.list());
         if (url.pathname === "/api/ssh-profiles" && req.method === "PUT")

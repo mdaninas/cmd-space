@@ -409,5 +409,28 @@ test(
     assert.ok(
       restarted.results.every((result) => result.sessionId && !result.error),
     );
+    const closeAll = await request("/api/sessions", "DELETE");
+    assert.equal(closeAll.status, 200);
+    assert.deepEqual(await closeAll.json(), { closed: 8 });
+    assert.deepEqual(await (await request("/api/sessions")).json(), []);
+    assert.deepEqual(
+      await (await request("/api/ssh-profiles")).json(),
+      profiles,
+    );
+    const reconnected = await (
+      await request("/api/ssh-profiles/connect", "POST", {})
+    ).json();
+    assert.equal(reconnected.sessions.length, 8);
+    assert.ok(
+      reconnected.results.every(
+        (result) => result.sessionId && !result.reused && !result.error,
+      ),
+    );
+    assert.ok(
+      reconnected.sessions.every(
+        (session) =>
+          !restarted.sessions.some((previous) => previous.id === session.id),
+      ),
+    );
   },
 );

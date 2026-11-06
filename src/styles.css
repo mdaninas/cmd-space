@@ -71,6 +71,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-he
 .nav-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 36px; padding: 8px 9px; border-radius: 4px; background: transparent; color: var(--soft); font-size: 13px; text-align: left; }
 .nav-item:hover { background: var(--hover); color: #eff1f3; }
 .nav-item > svg { color: var(--muted); }
+.nav-item.nav-danger { color: #e8aaa2; }
+.nav-item.nav-danger > svg { color: inherit; }
 
 /* Main workspace */
 .main-content { display: flex; flex-direction: column; width: calc(100% - var(--sidebar-width)); height: 100dvh; min-height: 0; margin-left: var(--sidebar-width); }

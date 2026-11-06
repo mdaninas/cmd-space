@@ -80,6 +80,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\terminal-control.ps1 -
 - Real CMD commands, file and folder operations, `cd`, drive switching, environment variables, pipes, redirection, executables, and batch files.
 - Interactive input such as `set /p` and the Node REPL, Ctrl+C, command history with the arrow keys, path completion with Tab, ANSI output, and terminal resizing.
 - Up to 12 independent sessions, sidebar search, shortcuts to session starting folders, and session renaming.
+- **Tutup semua terminal** in the sidebar, terminal menu, or command palette closes every CMD/SSH session after confirmation. It stops their running processes and removes terminal output while keeping the saved SSH list ready to reconnect.
 - Sessions, processes, environment, and terminal output survive a browser refresh. Reconnecting restores the screen from the server's terminal buffer, including colors and cursor position.
 - Output search with highlighting and match counts, copy and paste, starting-directory path copying, `.txt` buffer export, and scrollback clearing.
 - Focus mode with `Ctrl+Shift+Enter`, a collapsible sidebar, and session-tab navigation with the arrow keys, Home, and End.

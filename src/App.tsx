@@ -47,7 +47,8 @@ interface Config {
   shell: string;
   maxSessions: number;
 }
-type Modal = "new" | "settings" | "help" | "close" | "rename" | "ssh" | null;
+type Modal =
+  "new" | "settings" | "help" | "close" | "close-all" | "rename" | "ssh" | null;
 interface SshConnectResult {
   sessions: Session[];
   results: {
@@ -558,6 +559,40 @@ export default function App() {
       setBusy(false);
     }
   }
+  async function closeAllSessions() {
+    if (busy || !sessions.length) return;
+    setBusy(true);
+    setFormError("");
+    try {
+      const result = await api<{ closed: number }>("/sessions", "DELETE");
+      setSessions([]);
+      setActiveId("");
+      setTarget(undefined);
+      setSearchOpen(false);
+      setQuery("");
+      setSearchResult("");
+      setSessionFilter("");
+      setSshErrors([]);
+      tabFocusId.current = "";
+      try {
+        sessionStorage.removeItem("cmd-space:active");
+      } catch {
+        /* Optional persistence. */
+      }
+      setModal(null);
+      setSidebar(false);
+      notify(`${result.closed} terminal ditutup.`);
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLButtonElement>(".empty-state .primary-button")
+          ?.focus(),
+      );
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function renameSession() {
     if (!target || busy) return;
     setBusy(true);
@@ -800,6 +835,14 @@ export default function App() {
           </p>
         )}
         <div className="sidebar-bottom">
+          <button
+            className="nav-item nav-danger"
+            onClick={() => setModal("close-all")}
+            disabled={busy || !sessions.length}
+          >
+            <Trash2 size={17} />
+            <span>Tutup semua terminal</span>
+          </button>
           <button
             className="nav-item settings-nav"
             onClick={() => setModal("settings")}
@@ -1072,6 +1115,14 @@ export default function App() {
                       <X size={15} />
                       Tutup sesi
                     </button>
+                    <button
+                      className="menu-danger"
+                      onClick={() => setModal("close-all")}
+                      disabled={busy || !sessions.length}
+                    >
+                      <Trash2 size={15} />
+                      Tutup semua terminal
+                    </button>
                   </div>
                 </details>
               </div>
@@ -1249,15 +1300,17 @@ export default function App() {
             <h2 id="modal-title">
               {modal === "new"
                 ? "Terminal baru"
-                : modal === "ssh"
-                  ? "Daftar SSH"
-                  : modal === "settings"
-                    ? "Pengaturan"
-                    : modal === "help"
-                      ? "Pintasan"
-                      : modal === "rename"
-                        ? "Ganti nama"
-                        : "Tutup terminal?"}
+                : modal === "close-all"
+                  ? "Tutup semua terminal?"
+                  : modal === "ssh"
+                    ? "Daftar SSH"
+                    : modal === "settings"
+                      ? "Pengaturan"
+                      : modal === "help"
+                        ? "Pintasan"
+                        : modal === "rename"
+                          ? "Ganti nama"
+                          : "Tutup terminal?"}
             </h2>
             <IconButton
               title="Tutup dialog"
@@ -1492,13 +1545,22 @@ export default function App() {
               </button>
             </>
           )}
-          {modal === "close" && (
+          {(modal === "close" || modal === "close-all") && (
             <>
-              <p>
-                Proses yang berjalan di{" "}
-                <strong>{target ? sessionLabel(target.name) : ""}</strong> akan
-                dihentikan. Output sesi ini juga akan dihapus.
-              </p>
+              {modal === "close-all" ? (
+                <p>
+                  Semua proses CMD dan SSH di{" "}
+                  <strong>{sessions.length} terminal</strong> akan dihentikan.
+                  Output seluruh terminal juga akan dihapus. Daftar SSH yang
+                  tersimpan tetap tersedia.
+                </p>
+              ) : (
+                <p>
+                  Proses yang berjalan di{" "}
+                  <strong>{target ? sessionLabel(target.name) : ""}</strong>{" "}
+                  akan dihentikan. Output sesi ini juga akan dihapus.
+                </p>
+              )}
               {formError && (
                 <p className="form-error" role="alert">
                   {formError}
@@ -1514,11 +1576,15 @@ export default function App() {
                 </button>
                 <button
                   className="danger-button"
-                  onClick={() => void closeSession()}
+                  onClick={() =>
+                    void (modal === "close-all"
+                      ? closeAllSessions()
+                      : closeSession())
+                  }
                   disabled={busy}
                 >
-                  {busy && <LoaderCircle size={15} className="spin" />}Tutup
-                  sesi
+                  {busy && <LoaderCircle size={15} className="spin" />}
+                  {modal === "close-all" ? "Tutup semua" : "Tutup sesi"}
                 </button>
               </div>
             </>
@@ -1598,6 +1664,14 @@ export default function App() {
             icon: <Plus size={18} />,
             onSelect: openNew,
             disabled: !canCreate,
+          },
+          {
+            id: "close-all",
+            label: "Tutup semua terminal",
+            description: `${sessions.length} terminal · konfirmasi sebelum menutup`,
+            icon: <Trash2 size={18} />,
+            onSelect: () => setModal("close-all"),
+            disabled: busy || !sessions.length,
           },
           {
             id: "search",

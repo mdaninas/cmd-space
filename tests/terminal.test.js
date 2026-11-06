@@ -377,3 +377,76 @@ test(
     }, "child process stopped");
   },
 );
+
+test(
+  "closing all terminals stops processes and viewers, enforces origin checks, and allows new sessions",
+  { timeout: 20000 },
+  async () => {
+    const first = await newSession();
+    const second = await newSession();
+    const a = await attach(first);
+    const b = await attach(second);
+    a.command(
+      "node -e \"console.log('BULK_CHILD_PID='+process.pid);setInterval(()=>{},1000)\"",
+    );
+    b.command("echo BULK_SECOND_READY");
+    await waitFor(
+      () =>
+        /\nBULK_CHILD_PID=\d+/.test(a.text()) &&
+        b.text().includes("\nBULK_SECOND_READY"),
+      "both terminals running",
+    );
+    const childPid = Number(a.text().match(/\nBULK_CHILD_PID=(\d+)/)[1]);
+    const savedProfiles = await (await request("/api/ssh-profiles")).json();
+    assert.equal(
+      (
+        await request("/api/sessions", "DELETE", undefined, {
+          Origin: "https://untrusted.example",
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/api/sessions", "DELETE", undefined, {
+          "X-Terminal-Client": "",
+        })
+      ).status,
+      403,
+    );
+    assert.equal(app.sessions.size, 2);
+    const response = await request("/api/sessions", "DELETE");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { closed: 2 });
+    assert.deepEqual(await (await request("/api/sessions")).json(), []);
+    assert.deepEqual(
+      await (await request("/api/ssh-profiles")).json(),
+      savedProfiles,
+    );
+    await waitFor(
+      () => a.closeCode === 1000 && b.closeCode === 1000,
+      "all viewers closed normally",
+    );
+    for (const pid of [first.pid, second.pid, childPid]) {
+      await waitFor(() => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch (error) {
+          return error.code === "ESRCH";
+        }
+      }, "terminal and child processes stopped");
+    }
+    assert.deepEqual(await (await request("/api/sessions", "DELETE")).json(), {
+      closed: 0,
+    });
+    const fresh = await newSession();
+    const client = await attach(fresh);
+    client.command("echo AFTER_CLOSE_ALL");
+    await waitFor(
+      () => client.text().includes("\nAFTER_CLOSE_ALL"),
+      "new terminal works after close all",
+    );
+    await request(`/api/sessions/${fresh.id}`, "DELETE");
+  },
+);
